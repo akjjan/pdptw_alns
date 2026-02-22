@@ -1,5 +1,5 @@
 from solution_layer import Solution
-from problem_layer import ProblemInstance, Task, Vehicle
+from problem_layer import ProblemInstance, Task
 
 
 class DestroyOperator:
@@ -19,6 +19,9 @@ class ALNS:
     def __init__(self, instance: ProblemInstance):
         self._instance = instance
 
+    def generate_initial_solution(self) -> Solution:
+        pass
+
     def iterate(self, solution: Solution) -> Solution:
         pass
 
@@ -33,49 +36,49 @@ class LiLimParser:
 
     @staticmethod
     def calculate_distance(task1: Task, task2: Task) -> float:
-        return ((task1._x - task2._x) ** 2 + (task1._y - task2._y) ** 2) ** 0.5
+        return ((task1.x_ - task2.x_) ** 2 + (task1.y_ - task2.y_) ** 2) ** 0.5
 
     @staticmethod
     def parse(filepath: str) -> ProblemInstance:
         problem_instance = ProblemInstance(
-            _vehicles=[], _requests={}, _tasks={}, _distance_matrix={})
+            requests_={}, tasks_={}, distance_matrix_={}, delivery_to_pickup_={})
         with open(filepath, 'r') as f:
-            K, Q, S = map(int, f.readline().strip().split())
+            k, q, s = map(int, f.readline().strip().split())
             # 读第一行
-            problem_instance._number_of_vehicles = K
-            problem_instance._vehicle_capacity = Q
+            problem_instance.number_of_vehicles_ = k
+            problem_instance.vehicle_capacity_ = q
 
             _, depot_x, depot_y, *_ = map(int, f.readline().strip().split())
             # 读第二行仓库位置
-            problem_instance._depot_x = depot_x
-            problem_instance._depot_y = depot_y
+            problem_instance.depot_x_ = depot_x
+            problem_instance.depot_y_ = depot_y
 
             for line in f:
                 task_id, x, y, demand, ready_time, due_time, service_time, pickup, delivery = map(
                     int, line.strip().split())
-                problem_instance._tasks[task_id] = Task(
-                    _id=task_id,
-                    _x=x,
-                    _y=y,
-                    _demand=demand,
-                    _ready_time=ready_time,
-                    _due_time=due_time,
-                    _service_time=service_time,
+                problem_instance.tasks_[task_id] = Task(
+                    id_=task_id,
+                    x_=x,
+                    y_=y,
+                    demand_=demand,
+                    ready_time_=ready_time,
+                    due_time_=due_time,
+                    service_time_=service_time,
                     _pickup=pickup,
-                    _delivery=delivery
+                    delivery_=delivery
                 )
 
             # 构建requests字典
-        for task in problem_instance._tasks.values():
-            if task._delivery > 0:  # 取货任务
-                problem_instance._requests[task._id] = task._delivery
+        for task in problem_instance.tasks_.values():
+            if task.delivery_ > 0:  # 取货任务
+                problem_instance.requests_[task.id_] = task.delivery_
 
-        problem_instance._vehicles = [Vehicle(_vehicle_id=i) for i in range(K)]
+        problem_instance.delivery_to_pickup = {v: k for k, v in problem_instance.requests_.items()}
 
-        for task1 in problem_instance._tasks.values():
-            for task2 in problem_instance._tasks.values():
+        for task1 in problem_instance.tasks_.values():
+            for task2 in problem_instance.tasks_.values():
                 dist = LiLimParser.calculate_distance(task1, task2)
-                problem_instance._distance_matrix[(
-                    task1._id, task2._id)] = dist
+                problem_instance.distance_matrix_[(
+                    task1.id_, task2.id_)] = dist
 
         return problem_instance

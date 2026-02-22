@@ -2,12 +2,12 @@ from alns import LiLimParser
 
 if __name__ == "__main__":
     test_instance = LiLimParser.parse(
-        r"D:\PYPJ\pdptw_alns\pdp_100\pdp_100\lc101.txt")
+        "./pdp_100/pdp_100/lc101.txt")
 
-    print(test_instance._number_of_vehicles)
-    print(test_instance._vehicle_capacity)
-    print(len(test_instance._tasks))
-    print(len(test_instance._requests))
-    print(test_instance._requests)
-    print(test_instance._distance_matrix[(1, 2)])
-    print(test_instance._depot_x, test_instance._depot_y)
+    print(test_instance.number_of_vehicles_)
+    print(test_instance.vehicle_capacity_)
+    print(len(test_instance.tasks_))
+    print(len(test_instance.requests_))
+    print(test_instance.requests_)
+    print(test_instance.distance_matrix_[(1, 2)])
+    print(test_instance.depot_x_, test_instance.depot_y_)

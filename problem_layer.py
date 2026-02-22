@@ -1,18 +1,16 @@
 from dataclasses import dataclass
-from typing import Optional
-
 
 @dataclass(slots=True)
 class Task:
-    _id: int   # 取送任务的唯一标识符
-    _x: int
-    _y: int  # 坐标
-    _demand: int   # 负数表示送货，正数表示取货
-    _ready_time: int
-    _due_time: int   # 时间窗
-    _service_time: int   # 服务时间
+    id_: int   # 取送任务的唯一标识符
+    x_: int
+    y_: int  # 坐标
+    demand_: int   # 负数表示送货，正数表示取货
+    ready_time_: int
+    due_time_: int   # 时间窗
+    service_time_: int   # 服务时间
     _pickup: int
-    _delivery: int
+    delivery_: int
 
 
 @dataclass(slots=True)
@@ -30,12 +28,12 @@ class Vehicle:
 @dataclass(slots=True)
 class ProblemInstance:
 
-    _vehicles: list[Vehicle]  # 车辆列表
-    _requests: dict[int, int]   # 请求列表，键为取货任务id，值为送货任务id
-    _tasks: dict[int, Task]      # 取送任务列表
-    _distance_matrix: dict[tuple[int, int], float]   # 距离矩阵，键为任务id对，值为距离
+    requests_: dict[int, int]   # 请求列表，键为取货任务id，值为送货任务id
+    delivery_to_pickup_: dict[int, int]
+    tasks_: dict[int, Task]      # 取送任务列表
+    distance_matrix_: dict[tuple[int, int], float]   # 距离矩阵，键为任务id对，值为距离
 
-    _number_of_vehicles: int = 0
-    _vehicle_capacity: int = 0
-    _depot_x: int = 0
-    _depot_y: int = 0
+    number_of_vehicles_: int = 0
+    vehicle_capacity_: int = 0
+    depot_x_: int = 0
+    depot_y_: int = 0

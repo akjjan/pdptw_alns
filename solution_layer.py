@@ -3,8 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class Route:
-    _vehicle_id: int  # 车辆的唯一标识符
-    _visit_tasks: list[int]  # 车辆行驶的节点序列，包含起始点和结束点
+    visit_tasks_: list[int]  # 车辆行驶的节点序列，包含起始点和结束点
 
 
 @dataclass(slots=True)
@@ -17,8 +16,7 @@ class Solution:
         new_routes = []
         for route in self._routes:
             new_route = Route(
-                _vehicle_id=route._vehicle_id,        # 共享
-                _visit_tasks=list(route._visit_tasks)       # 复制列表
+                visit_tasks_=list(route.visit_tasks_)       # 复制列表
             )
             new_routes.append(new_route)
 
