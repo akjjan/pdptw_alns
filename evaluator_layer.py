@@ -1,15 +1,19 @@
-from solution_layer import Route, Solution
+from solution_layer import Solution
 from problem_layer import ProblemInstance
 
 
 class FeasibilityChecker:
-    def check_route(self, route: Route, instance: ProblemInstance) -> bool:
-        return self.check_capacity(route, instance) and self.check_time_windows(route, instance) and self.check_pickup_before_delivery(route, instance)
 
     @staticmethod
-    def check_capacity(route: Route, instance: ProblemInstance) -> bool:
+    def check_route(route: list[int], instance: ProblemInstance) -> bool:
+        return FeasibilityChecker.check_capacity(route, instance) and FeasibilityChecker.check_time_windows(route,
+                                                                                                            instance) and FeasibilityChecker.check_pickup_before_delivery(
+            route, instance)
+
+    @staticmethod
+    def check_capacity(route: list[int], instance: ProblemInstance) -> bool:
         current_load = 0
-        for task_id in route.visit_tasks_:
+        for task_id in route:
             task = instance.tasks_[task_id]
             current_load += task.demand_
             if current_load > instance.vehicle_capacity_:
@@ -18,10 +22,10 @@ class FeasibilityChecker:
         return True
 
     @staticmethod
-    def check_time_windows(route: Route, instance: ProblemInstance) -> bool:
+    def check_time_windows(route: list[int], instance: ProblemInstance) -> bool:
         current_time = 0
         last_visit_task = 0
-        for task_id in route.visit_tasks_:
+        for task_id in route:
             task = instance.tasks_[task_id]
             arrival_time = current_time + \
                 instance.distance_matrix_[(last_visit_task, task_id)]
@@ -34,13 +38,33 @@ class FeasibilityChecker:
 
         return True
 
-    def check_pickup_before_delivery(self, route: Route, instance: ProblemInstance) -> bool:
-        pass
+    @staticmethod
+    def check_pickup_before_delivery(route: list[int], instance: ProblemInstance) -> bool:
+        vis = set()
+        for task_id in route:
+            task = instance.tasks_[task_id]
+            if task.pickup_ > 0 and (task.pickup_ not in vis):
+                return False
+            vis.add(task_id)
+
+        return True
 
 
 class CostEvaluator:
-    def route_cost(self, route: Route) -> float:
-        pass
 
-    def solution_cost(self, solution: Solution) -> float:
-        pass
+    @staticmethod
+    def route_cost(route: list[int], instance: ProblemInstance) -> float:
+        last_task_id = 0
+        cost = 0.0
+        for task_id in route:
+            cost += instance.distance_matrix_[(last_task_id, task_id)]
+            last_task_id = task_id
+        cost += instance.distance_matrix_[(last_task_id, 0)]
+        return cost
+
+    @staticmethod
+    def solution_cost(solution: Solution, instance: ProblemInstance) -> float:
+        total_cost = 0.0
+        for route in solution.routes_:
+            total_cost += CostEvaluator.route_cost(route, instance)
+        return total_cost

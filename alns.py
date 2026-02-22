@@ -1,5 +1,6 @@
 from solution_layer import Solution
 from problem_layer import ProblemInstance, Task
+from evaluator_layer import FeasibilityChecker, CostEvaluator
 
 
 class DestroyOperator:
@@ -20,9 +21,31 @@ class ALNS:
         self._instance = instance
 
     def generate_initial_solution(self) -> Solution:
-        pass
+        solution = Solution(routes_=[[0, 0] for _ in range(self._instance.number_of_vehicles_)], request_bank_=list(
+            self._instance.requests_.keys()))
 
-    def iterate(self, solution: Solution) -> Solution:
+        for request_id in solution.request_bank_[:]:
+            pickup_id, delivery_id = self._instance.requests_[request_id]
+
+            to_insert_route_idx = min(
+                range(len(solution.routes_)), key=lambda idx: len(solution.routes_[idx]))
+
+            route = solution.routes_[to_insert_route_idx]
+
+            new_route = route[:-1] + [pickup_id, delivery_id, 0]
+
+            if FeasibilityChecker.check_route(new_route, self._instance):
+                solution.routes_[to_insert_route_idx] = new_route
+                solution.request_bank_.remove(request_id)
+
+        solution.solution_cost_ = CostEvaluator.solution_cost(
+            solution, self._instance)
+        solution.vehicle_count_ = sum(
+            1 for route in solution.routes_ if len(route) > 2)
+
+        return solution
+
+    def iterate(self, solution: Solution):
         pass
 
     def select_destroy_operator(self):
@@ -40,45 +63,47 @@ class LiLimParser:
 
     @staticmethod
     def parse(filepath: str) -> ProblemInstance:
-        problem_instance = ProblemInstance(
-            requests_={}, tasks_={}, distance_matrix_={}, delivery_to_pickup_={})
+        instance = ProblemInstance()
         with open(filepath, 'r') as f:
             k, q, s = map(int, f.readline().strip().split())
             # 读第一行
-            problem_instance.number_of_vehicles_ = k
-            problem_instance.vehicle_capacity_ = q
-
-            _, depot_x, depot_y, *_ = map(int, f.readline().strip().split())
-            # 读第二行仓库位置
-            problem_instance.depot_x_ = depot_x
-            problem_instance.depot_y_ = depot_y
+            instance.number_of_vehicles_ = k
+            instance.vehicle_capacity_ = q
 
             for line in f:
                 task_id, x, y, demand, ready_time, due_time, service_time, pickup, delivery = map(
                     int, line.strip().split())
-                problem_instance.tasks_[task_id] = Task(
-                    id_=task_id,
+                instance.tasks_[task_id] = Task(
                     x_=x,
                     y_=y,
                     demand_=demand,
                     ready_time_=ready_time,
                     due_time_=due_time,
                     service_time_=service_time,
-                    _pickup=pickup,
+                    pickup_=pickup,
                     delivery_=delivery
                 )
 
-            # 构建requests字典
-        for task in problem_instance.tasks_.values():
-            if task.delivery_ > 0:  # 取货任务
-                problem_instance.requests_[task.id_] = task.delivery_
+            instance.depot_x_ = instance.tasks_[0].x_
+            instance.depot_y_ = instance.tasks_[0].y_
 
-        problem_instance.delivery_to_pickup = {v: k for k, v in problem_instance.requests_.items()}
+        # 构建requests字典
+        request_id = 1
+        for id, task in instance.tasks_.items():
+            if task.delivery_ > 0:
+                instance.requests_[request_id] = (id, task.delivery_)
+                instance.pickup_to_request_[id] = request_id
+                instance.delivery_to_request_[
+                    task.delivery_] = request_id
+                request_id += 1
 
-        for task1 in problem_instance.tasks_.values():
-            for task2 in problem_instance.tasks_.values():
+        instance.delivery_to_pickup_ = {
+            v: k for k, v in instance.requests_.values()}
+
+        for i, task1 in instance.tasks_.items():
+            for j, task2 in instance.tasks_.items():
                 dist = LiLimParser.calculate_distance(task1, task2)
-                problem_instance.distance_matrix_[(
-                    task1.id_, task2.id_)] = dist
+                instance.distance_matrix_[(
+                    i, j)] = dist
 
-        return problem_instance
+        return instance
