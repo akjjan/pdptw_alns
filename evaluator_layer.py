@@ -1,11 +1,20 @@
 from problem_layer import ProblemInstance
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from solution_layer import Solution
 
 
 class FeasibilityChecker:
+
+    @staticmethod
+    def check_solution(solution: 'Solution', instance: ProblemInstance) -> bool:
+        for route in solution.routes_:
+            if not FeasibilityChecker.check_route(route, instance):
+                return False
+
+        return True
 
     @staticmethod
     def is_valid_route(route: list[int], instance: ProblemInstance):
@@ -38,7 +47,7 @@ class FeasibilityChecker:
         for task_id in route:
             task = instance.tasks_[task_id]
             arrival_time = current_time + \
-                instance.distance_matrix_[(last_visit_task, task_id)]
+                instance.distance_matrix_[last_visit_task, task_id]
             if arrival_time < task.ready_time_:
                 current_time = task.ready_time_ + task.service_time_
             elif arrival_time > task.due_time_:
@@ -68,9 +77,9 @@ class CostEvaluator:
         last_task_id = 0
         cost = 0.0
         for task_id in route:
-            cost += instance.distance_matrix_[(last_task_id, task_id)]
+            cost += instance.distance_matrix_[last_task_id, task_id]
             last_task_id = task_id
-        cost += instance.distance_matrix_[(last_task_id, 0)]
+        cost += instance.distance_matrix_[last_task_id, 0]
         return cost
 
     @staticmethod

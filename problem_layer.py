@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import numpy as np
 
 
 @dataclass(slots=True)
@@ -26,8 +27,8 @@ class ProblemInstance:
         default_factory=dict)  # 送货任务id到request id的映射
     tasks_: dict[int, Task] = field(
         default_factory=dict)      # 键:任务id，值为Task对象
-    distance_matrix_: dict[tuple[int, int], float] = field(
-        default_factory=dict)   # 距离，键为任务id对，值为距离
+    distance_matrix_: np.ndarray = field(
+        default_factory=lambda: np.array([]))  # 距离矩阵
 
     number_of_vehicles_: int = 0
     vehicle_capacity_: int = 0
