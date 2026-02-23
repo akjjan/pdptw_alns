@@ -1,8 +1,18 @@
-from solution_layer import Solution
 from problem_layer import ProblemInstance
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from solution_layer import Solution
 
 
 class FeasibilityChecker:
+
+    @staticmethod
+    def is_valid_route(route: list[int], instance: ProblemInstance):
+        assert route[0] == 0 and route[-1] == 0 and len(
+            route) >= 2, "路线必须以0开头和结尾,且至少包含起点和终点"
+        assert len(route) % 2 == 0, "每条路线上的任务数必须为偶数（成对的取货和送货）"
+        return True
 
     @staticmethod
     def check_route(route: list[int], instance: ProblemInstance) -> bool:
@@ -35,6 +45,7 @@ class FeasibilityChecker:
                 return False
             else:
                 current_time = arrival_time + task.service_time_
+            last_visit_task = task_id
 
         return True
 
@@ -63,7 +74,7 @@ class CostEvaluator:
         return cost
 
     @staticmethod
-    def solution_cost(solution: Solution, instance: ProblemInstance) -> float:
+    def solution_cost(solution: 'Solution', instance: ProblemInstance) -> float:
         total_cost = 0.0
         for route in solution.routes_:
             total_cost += CostEvaluator.route_cost(route, instance)

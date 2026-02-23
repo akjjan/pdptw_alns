@@ -1,18 +1,85 @@
 from solution_layer import Solution
 from problem_layer import ProblemInstance, Task
-from evaluator_layer import FeasibilityChecker, CostEvaluator
+from evaluator_layer import FeasibilityChecker
 
 
 class DestroyOperator:
 
-    def destroy(self, solution: Solution, num_requests_to_remove: int) -> Solution:
-        pass
+    @staticmethod
+    def remove(solution: Solution, instance: ProblemInstance, request_id: int) -> Solution:
+        pickup_id, delivery_id = instance.requests_[request_id]
+        # 取货，送货任务
+        new_solution = solution.copy()
+        # 把solution复制一份，修改复制的
+        for route in new_solution.routes_:
+            if pickup_id in route and delivery_id in route:
+                route.remove(pickup_id)
+                route.remove(delivery_id)
+
+        new_solution.request_bank_.add(request_id)
+        new_solution.update_cost_and_vehicle_count(instance)
+        return new_solution
+        # 输入一个解，返回移除request后的解
+
+    @staticmethod
+    def worst_removal(solution: Solution, instance: ProblemInstance, num_requests_to_remove: int) -> Solution:
+        new_solution = solution.copy()
+        sorted_assigned_requests = sorted(
+            new_solution.assigned_requests_, key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id, instance), reverse=True)
+
+        for request_id in sorted_assigned_requests[:num_requests_to_remove]:
+            new_solution = DestroyOperator.remove(
+                new_solution, instance, request_id)
+
+        return new_solution
+        # 输入一个解，移除num_requests_to_remove个请求，返回新的解
 
 
 class RepairOperator:
 
     def repair(self, solution: Solution) -> Solution:
         pass
+
+    @staticmethod
+    def insert(solution: Solution, instance: ProblemInstance, request_id: int, route_idx: int, pickup_pos: int, delivery_pos: int) -> Solution:
+        pickup_id, delivery_id = instance.requests_[request_id]
+        # 取货和送货任务id
+        new_solution = solution.copy()
+        # 把solution复制一份，修改复制的
+        new_solution.routes_[route_idx].insert(pickup_pos, pickup_id)
+        new_solution.routes_[route_idx].insert(delivery_pos + 1, delivery_id)
+        # 插入pickup和delivery，注意delivery_pos要加1，因为插入pickup后delivery_pos会往后移一位
+        new_solution.assigned_requests_.add(request_id)
+        # 更新request bank和assigned requests
+        new_solution.request_bank_.remove(request_id)
+        new_solution.update_cost_and_vehicle_count(instance)
+        # 重新计算成本和车辆数
+        return new_solution
+
+    @staticmethod
+    def greedy_repair(solution: Solution, instance: ProblemInstance) -> Solution:
+        new_solution = solution.copy()
+        best_insert_route_idx: dict[int, int] = {}
+        best_pickup_pos: dict[int, int] = {}
+        best_delivery_pos: dict[int, int] = {}
+        best_cost_increase: dict[int, float] = {}
+
+        for request_id in new_solution.request_bank_:
+            best_insert_route_idx[request_id], best_pickup_pos[request_id], best_delivery_pos[request_id], best_cost_increase[request_id] = new_solution.greedy_insertion_cost_increase(
+                request_id, instance)
+
+        # 把未分配请求按照贪心插入成本增加排序
+        sorted_unassigned_requests = sorted(
+            new_solution.request_bank_, key=lambda req_id: best_cost_increase[req_id])
+
+        for request_id in sorted_unassigned_requests:
+            if best_insert_route_idx[request_id] != -1:
+                new_solution = RepairOperator.insert(
+                    new_solution, instance, request_id, best_insert_route_idx[request_id], best_pickup_pos[request_id], best_delivery_pos[request_id])
+
+        return new_solution
+
+        # 输入一个解，按照贪心插入成本增加把request bank里的请求插入到solution里，返回新的解
 
 
 class ALNS:
@@ -21,10 +88,10 @@ class ALNS:
         self._instance = instance
 
     def generate_initial_solution(self) -> Solution:
-        solution = Solution(routes_=[[0, 0] for _ in range(self._instance.number_of_vehicles_)], request_bank_=list(
+        solution = Solution(routes_=[[0, 0] for _ in range(self._instance.number_of_vehicles_)],  assigned_requests_=set(), request_bank_=set(
             self._instance.requests_.keys()))
 
-        for request_id in solution.request_bank_[:]:
+        for request_id in list(solution.request_bank_):
             pickup_id, delivery_id = self._instance.requests_[request_id]
 
             to_insert_route_idx = min(
@@ -37,16 +104,18 @@ class ALNS:
             if FeasibilityChecker.check_route(new_route, self._instance):
                 solution.routes_[to_insert_route_idx] = new_route
                 solution.request_bank_.remove(request_id)
+                solution.assigned_requests_.add(request_id)
 
-        solution.solution_cost_ = CostEvaluator.solution_cost(
-            solution, self._instance)
-        solution.vehicle_count_ = sum(
-            1 for route in solution.routes_ if len(route) > 2)
+        solution.update_cost_and_vehicle_count(self._instance)
 
         return solution
 
     def iterate(self, solution: Solution):
-        pass
+        new_solution = DestroyOperator.worst_removal(
+            solution, self._instance, num_requests_to_remove=3)
+        new_solution = RepairOperator.greedy_repair(
+            new_solution, self._instance)
+        return new_solution
 
     def select_destroy_operator(self):
         pass
