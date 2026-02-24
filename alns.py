@@ -1,6 +1,6 @@
 from solution_layer import Solution
 from problem_layer import ProblemInstance, Task
-from evaluator_layer import FeasibilityChecker
+from evaluator_layer import FeasibilityChecker, CostEvaluator
 import numpy as np
 import copy
 import random
@@ -13,10 +13,12 @@ class DestroyOperator:
         pickup_id, delivery_id = instance.requests_[request_id]
         # 取货，送货任务
         new_solution = copy.deepcopy(solution)
-        # 把solution复制一份，修改复制的
+        # 把solution复制一份，修改复制的解
         route = new_solution.routes_[new_solution.task_to_route_[pickup_id]]
+        # 获得引用，直接修改这个route就行了
         route.remove(pickup_id)
         route.remove(delivery_id)
+
         new_solution.task_to_route_[pickup_id] = -1
         new_solution.task_to_route_[delivery_id] = -1
         # 更新任务到路线的映射
@@ -34,9 +36,14 @@ class DestroyOperator:
         sorted_assigned_requests = sorted(
             new_solution.assigned_requests_, key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id, instance), reverse=True)
 
-        for request_id in sorted_assigned_requests[:num_requests_to_remove]:
+        y = 3.0  # 控制随机移除的参数，y越大就越接近贪心
+
+        to_remove_idx = set(
+            [int((random.random()**y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
+
+        for idx in to_remove_idx:
             new_solution = DestroyOperator.remove(
-                new_solution, instance, request_id)
+                new_solution, instance, sorted_assigned_requests[idx])
 
         return new_solution
         # 输入一个解，移除num_requests_to_remove个请求，返回新的解
@@ -56,13 +63,16 @@ class RepairOperator:
         new_solution.routes_[route_idx] = solution.routes_[route_idx][:pickup_pos] + [pickup_id] \
             + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
             [delivery_id] + solution.routes_[route_idx][delivery_pos:]
+        # 在指定路线的指定位置插入取货和送货任务
 
         new_solution.task_to_route_[pickup_id] = route_idx
         new_solution.task_to_route_[delivery_id] = route_idx
+        # 更新任务到路线的映射
 
         new_solution.assigned_requests_.add(request_id)
         # 更新request bank和assigned requests
         new_solution.request_bank_.remove(request_id)
+
         new_solution.update_cost_and_vehicle_count(instance)
         # 重新计算成本和车辆数
         return new_solution
@@ -70,11 +80,14 @@ class RepairOperator:
     @staticmethod
     def greedy_repair(solution: Solution, instance: ProblemInstance) -> Solution:
         new_solution = copy.deepcopy(solution)
+        # 把solution复制一份，修改复制的
+
         best_insert_route_idx: dict[int, int] = {}
         best_pickup_pos: dict[int, int] = {}
         best_delivery_pos: dict[int, int] = {}
         best_cost_increase: dict[int, float] = {}
 
+        # 处理未分配的请求
         for request_id in new_solution.request_bank_:
             best_insert_route_idx[request_id], best_pickup_pos[request_id], \
                 best_delivery_pos[request_id], best_cost_increase[request_id] \
@@ -87,6 +100,7 @@ class RepairOperator:
 
         for request_id in sorted_unassigned_requests:
             if best_insert_route_idx[request_id] != -1:
+                # 如果有可行的插入位置，就插入这个请求
                 new_solution = RepairOperator.insert(
                     new_solution, instance, request_id, best_insert_route_idx[request_id], best_pickup_pos[request_id], best_delivery_pos[request_id])
 
@@ -99,7 +113,21 @@ class ALNS:
 
     def __init__(self, instance: ProblemInstance):
         self._instance = instance
+        self._a1 = 1e4  # 车辆数量系数
+        self._a2 = self._a1 / instance.max_distance_  # 距离系数
+        self._a3 = self._a1 / instance.average_time_window_width_  # 时间窗违约系数
+        self._a4 = self._a1 / instance.half_capacity_  # 容量违约系数
+        self._stats = {
+            "iterations": 0,
+            "infeasible_rejected": 0,
+            "better_accepted": 0,
+            "worse_candidates": 0,
+            "worse_accepted": 0,
+        }
+        self.best_feasible_solution = Solution(instance)
+        self.best_feasible_cost = float('inf')
 
+    # 生50*成一个可行的初始解
     def generate_initial_solution(self) -> Solution:
         solution = Solution(self._instance)
 
@@ -127,30 +155,63 @@ class ALNS:
 
         solution.update_cost_and_vehicle_count(self._instance)
 
+        # 初始解可行则记录为最优可行解
+        if FeasibilityChecker.check_solution(solution, self._instance):
+            self.best_feasible_solution = copy.deepcopy(solution)
+            self.best_feasible_cost = self.calculate_all_cost(solution)
+
         return solution
+
+    # 车辆成本+距离成本+ 时间窗违约成本+容量违约成本
+    def calculate_all_cost(self, solution: Solution) -> float:
+        return self._a1 * solution.vehicle_count_ + \
+            self._a2 * solution.solution_cost_ + \
+            self._a3 * CostEvaluator.calculate_time_window_violation(solution, self._instance) + \
+            self._a4 * \
+            CostEvaluator.calculate_capacity_violation(
+                solution, self._instance)
 
     def iterate(self, solution: Solution):
         new_solution = DestroyOperator.worst_removal(
-            solution, self._instance, num_requests_to_remove=3)
+            solution, self._instance, num_requests_to_remove=1)
         new_solution = RepairOperator.greedy_repair(
             new_solution, self._instance)
 
-        acceptance_probability = 0.1
+        acceptance_bad_prob = 0.2
+        self._stats["iterations"] += 1
 
-        if FeasibilityChecker.check_solution(new_solution, self._instance) == False:
-            p = random.uniform(0, 1)
-            if p < acceptance_probability:
+        if FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution, self._instance) == False:
+            self._stats["infeasible_rejected"] += 1
+            return solution
+        else:
+            new_cost = self.calculate_all_cost(new_solution)
+            old_cost = self.calculate_all_cost(solution)
+
+            # 任何时候如果新解完全可行，就追踪最优可行解
+            if FeasibilityChecker.check_solution(new_solution, self._instance):
+                if self.best_feasible_solution is None or new_cost < self.best_feasible_cost:
+                    self.best_feasible_solution = copy.deepcopy(new_solution)
+                    self.best_feasible_cost = new_cost
+
+            if new_cost < old_cost:
+                self._stats["better_accepted"] += 1
                 return new_solution
             else:
-                return solution
-        else:
-            return new_solution
+                self._stats["worse_candidates"] += 1
+                if random.random() < acceptance_bad_prob:
+                    self._stats["worse_accepted"] += 1
+                    return new_solution
+                else:
+                    return solution
 
     def select_destroy_operator(self):
         pass
 
     def select_repair_operator(self):
         pass
+
+    def get_stats(self) -> dict:
+        return dict(self._stats)
 
 
 class LiLimParser:
@@ -167,10 +228,13 @@ class LiLimParser:
             # 读第一行
             instance.number_of_vehicles_ = k
             instance.vehicle_capacity_ = q
+            instance.half_capacity_ = q / 2.0
 
+            average_time_window_width = 0.0
             for line in f:
                 task_id, x, y, demand, ready_time, due_time, service_time, pickup, delivery = map(
                     int, line.strip().split())
+                average_time_window_width += (due_time - ready_time)
                 instance.tasks_[task_id] = Task(
                     x_=x,
                     y_=y,
@@ -184,6 +248,8 @@ class LiLimParser:
 
             instance.depot_x_ = instance.tasks_[0].x_
             instance.depot_y_ = instance.tasks_[0].y_
+            instance.average_time_window_width_ = average_time_window_width / \
+                len(instance.tasks_)
 
         # 构建requests字典
         request_id = 1
@@ -204,5 +270,6 @@ class LiLimParser:
             for j, task2 in instance.tasks_.items():
                 dist = LiLimParser.calculate_distance(task1, task2)
                 instance.distance_matrix_[i, j] = dist
+                instance.max_distance_ = max(instance.max_distance_, dist)
 
         return instance

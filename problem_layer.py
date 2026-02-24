@@ -34,3 +34,7 @@ class ProblemInstance:
     vehicle_capacity_: int = 0
     depot_x_: int = 0
     depot_y_: int = 0
+
+    max_distance_: float = 0.0
+    average_time_window_width_: float = 0.0
+    half_capacity_: float = 0.0

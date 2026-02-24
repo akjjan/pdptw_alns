@@ -10,6 +10,14 @@ class Solution:
     solution_cost_: float = 0.0  # 总距离成本
     vehicle_count_: int = 0  # 使用的车辆数量
 
+    def __str__(self):
+        nonempty_routes = [route for route in self.routes_ if len(route) > 2]
+        # 把每个非空路线隔行打印出来
+        return f"路线: {nonempty_routes}\n" + \
+            f"未分配的请求数量: {len(self.request_bank_)}\n" + \
+            f"总距离成本: {self.solution_cost_}\n" + \
+            f"使用的车辆数量: {self.vehicle_count_}"
+
     def __init__(self, instance: ProblemInstance):
         self.routes_ = [[0, 0] for _ in range(instance.number_of_vehicles_)]
         self.assigned_requests_ = set()
