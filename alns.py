@@ -26,20 +26,21 @@ class DestroyOperator:
         new_solution.request_bank_.add(request_id)
         new_solution.assigned_requests_.remove(request_id)
         # 更新request bank和assigned requests
-        new_solution.update_cost_and_vehicle_count(instance)
+        new_solution.update_info()
         return new_solution
         # 输入一个解，返回移除request后的解
 
     @staticmethod
-    def worst_removal(solution: Solution, instance: ProblemInstance, num_requests_to_remove: int) -> Solution:
+    def random_worst_removal(solution: Solution, instance: ProblemInstance, num_requests_to_remove: int) -> Solution:
         new_solution = copy.deepcopy(solution)
         sorted_assigned_requests = sorted(
-            new_solution.assigned_requests_, key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id, instance), reverse=True)
+            new_solution.assigned_requests_,
+            key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id), reverse=True)
 
         y = 3.0  # 控制随机移除的参数，y越大就越接近贪心
 
         to_remove_idx = set(
-            [int((random.random()**y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
+            [int((random.random() ** y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
 
         for idx in to_remove_idx:
             new_solution = DestroyOperator.remove(
@@ -50,19 +51,21 @@ class DestroyOperator:
 
 
 class RepairOperator:
+    regret_k: int = 3
 
     def repair(self, solution: Solution) -> Solution:
         pass
 
     @staticmethod
-    def insert(solution: Solution, instance: ProblemInstance, request_id: int, route_idx: int, pickup_pos: int, delivery_pos: int) -> Solution:
+    def insert(solution: Solution, instance: ProblemInstance, request_id: int, route_idx: int, pickup_pos: int,
+               delivery_pos: int) -> Solution:
         pickup_id, delivery_id = instance.requests_[request_id]
         # 取货和送货任务id
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的
         new_solution.routes_[route_idx] = solution.routes_[route_idx][:pickup_pos] + [pickup_id] \
-            + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
-            [delivery_id] + solution.routes_[route_idx][delivery_pos:]
+                                          + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
+                                          [delivery_id] + solution.routes_[route_idx][delivery_pos:]
         # 在指定路线的指定位置插入取货和送货任务
 
         new_solution.task_to_route_[pickup_id] = route_idx
@@ -73,7 +76,7 @@ class RepairOperator:
         # 更新request bank和assigned requests
         new_solution.request_bank_.remove(request_id)
 
-        new_solution.update_cost_and_vehicle_count(instance)
+        new_solution.update_info()
         # 重新计算成本和车辆数
         return new_solution
 
@@ -91,8 +94,8 @@ class RepairOperator:
         for request_id in new_solution.request_bank_:
             best_insert_route_idx[request_id], best_pickup_pos[request_id], \
                 best_delivery_pos[request_id], best_cost_increase[request_id] \
-                = new_solution.greedy_insertion_cost_increase(
-                request_id, instance)
+                = new_solution.greedy_insert_cost_increase(
+                request_id)
 
         # 把未分配请求按照贪心插入成本增加排序
         sorted_unassigned_requests = sorted(
@@ -102,11 +105,15 @@ class RepairOperator:
             if best_insert_route_idx[request_id] != -1:
                 # 如果有可行的插入位置，就插入这个请求
                 new_solution = RepairOperator.insert(
-                    new_solution, instance, request_id, best_insert_route_idx[request_id], best_pickup_pos[request_id], best_delivery_pos[request_id])
+                    new_solution, instance, request_id, best_insert_route_idx[request_id], best_pickup_pos[request_id],
+                    best_delivery_pos[request_id])
 
         return new_solution
 
         # 输入一个解，按照贪心插入成本增加把request bank里的请求插入到solution里，返回新的解
+
+    def regret_repair(self, solution: Solution, instance: ProblemInstance) -> Solution:
+        pass
 
 
 class ALNS:
@@ -153,7 +160,7 @@ class ALNS:
                 solution.assigned_requests_.add(request_id)
                 # 如果插入后可行，更新路线、request bank和assigned requests
 
-        solution.update_cost_and_vehicle_count(self._instance)
+        solution.update_info()
 
         # 初始解可行则记录为最优可行解
         if FeasibilityChecker.check_solution(solution, self._instance):
@@ -172,15 +179,15 @@ class ALNS:
                 solution, self._instance)
 
     def iterate(self, solution: Solution):
-        new_solution = DestroyOperator.worst_removal(
+        new_solution = DestroyOperator.random_worst_removal(
             solution, self._instance, num_requests_to_remove=1)
         new_solution = RepairOperator.greedy_repair(
             new_solution, self._instance)
 
-        acceptance_bad_prob = 0.2
+        acceptance_bad_prob = 0.05
         self._stats["iterations"] += 1
 
-        if FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution, self._instance) == False:
+        if not FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution, self._instance):
             self._stats["infeasible_rejected"] += 1
             return solution
         else:
@@ -249,14 +256,14 @@ class LiLimParser:
             instance.depot_x_ = instance.tasks_[0].x_
             instance.depot_y_ = instance.tasks_[0].y_
             instance.average_time_window_width_ = average_time_window_width / \
-                len(instance.tasks_)
+                                                  len(instance.tasks_)
 
         # 构建requests字典
         request_id = 1
-        for id, task in instance.tasks_.items():
+        for id_, task in instance.tasks_.items():
             if task.delivery_ > 0:
-                instance.requests_[request_id] = (id, task.delivery_)
-                instance.pickup_to_request_[id] = request_id
+                instance.requests_[request_id] = (id_, task.delivery_)
+                instance.pickup_to_request_[id_] = request_id
                 instance.delivery_to_request_[
                     task.delivery_] = request_id
                 request_id += 1

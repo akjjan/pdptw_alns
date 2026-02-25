@@ -6,17 +6,16 @@ import numpy as np
 class Task:
     x_: int
     y_: int  # 坐标
-    demand_: int   # 负数表示送货，正数表示取货
+    demand_: int  # 负数表示送货，正数表示取货
     ready_time_: int
-    due_time_: int   # 时间窗
-    service_time_: int   # 服务时间
+    due_time_: int  # 时间窗
+    service_time_: int  # 服务时间
     pickup_: int
     delivery_: int
 
 
 @dataclass(slots=True)
 class ProblemInstance:
-
     # 键: request id，值: (取货任务id, 送货任务id)
     requests_: dict[int, tuple[int, int]] = field(default_factory=dict)
     delivery_to_pickup_: dict[int, int] = field(
@@ -26,7 +25,7 @@ class ProblemInstance:
     delivery_to_request_: dict[int, int] = field(
         default_factory=dict)  # 送货任务id到request id的映射
     tasks_: dict[int, Task] = field(
-        default_factory=dict)      # 键:任务id，值为Task对象
+        default_factory=dict)  # 键:任务id，值为Task对象
     distance_matrix_: np.ndarray = field(
         default_factory=lambda: np.array([]))  # 距离矩阵
 

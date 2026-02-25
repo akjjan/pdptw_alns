@@ -1,6 +1,5 @@
 from alns import LiLimParser, ALNS
 from evaluator_layer import FeasibilityChecker
-from solution_layer import Solution
 import time
 import copy
 

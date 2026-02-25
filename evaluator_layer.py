@@ -1,7 +1,6 @@
 from problem_layer import ProblemInstance
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from solution_layer import Solution
 
@@ -14,13 +13,6 @@ class FeasibilityChecker:
             if not FeasibilityChecker.check_route(route, instance):
                 return False
 
-        return True
-
-    @staticmethod
-    def is_valid_route(route: list[int], instance: ProblemInstance):
-        assert route[0] == 0 and route[-1] == 0 and len(
-            route) >= 2, "路线必须以0开头和结尾,且至少包含起点和终点"
-        assert len(route) % 2 == 0, "每条路线上的任务数必须为偶数（成对的取货和送货）"
         return True
 
     @staticmethod
@@ -41,6 +33,7 @@ class FeasibilityChecker:
         return True
 
     '''算一条路线的容量违约量'''
+
     @staticmethod
     def calculate_capacity_violation(route: list[int], instance: ProblemInstance) -> int:
         current_load = 0
@@ -60,7 +53,7 @@ class FeasibilityChecker:
         for task_id in route:
             task = instance.tasks_[task_id]
             arrival_time = current_time + \
-                instance.distance_matrix_[last_visit_task, task_id]
+                           instance.distance_matrix_[last_visit_task, task_id]
             if arrival_time < task.ready_time_:
                 current_time = task.ready_time_ + task.service_time_
             elif arrival_time > task.due_time_:
@@ -72,6 +65,7 @@ class FeasibilityChecker:
         return True
 
     '''算一条路线的时间窗违约量'''
+
     @staticmethod
     def calculate_time_window_violation(route: list[int], instance: ProblemInstance) -> int:
         current_time = 0
@@ -80,7 +74,7 @@ class FeasibilityChecker:
         for task_id in route:
             task = instance.tasks_[task_id]
             arrival_time = current_time + \
-                instance.distance_matrix_[last_visit_task, task_id]
+                           instance.distance_matrix_[last_visit_task, task_id]
             if arrival_time < task.ready_time_:
                 current_time = task.ready_time_ + task.service_time_
             elif arrival_time > task.due_time_:
@@ -112,8 +106,8 @@ class FeasibilityChecker:
 
 
 class CostEvaluator:
+    """算一条路线的距离"""
 
-    '''算一条路线的距离'''
     @staticmethod
     def route_cost(route: list[int], instance: ProblemInstance) -> float:
         last_task_id = 0
@@ -125,8 +119,9 @@ class CostEvaluator:
         return cost
 
     '''算一个解的总距离'''
+
     @staticmethod
-    def solution_cost(solution: 'Solution', instance: ProblemInstance) -> float:
+    def distance_cost(solution: 'Solution', instance: ProblemInstance) -> float:
         total_cost = 0.0
         for route in solution.routes_:
             total_cost += CostEvaluator.route_cost(route, instance)
