@@ -10,7 +10,7 @@ def green_text(text: str) -> str:
 
 if __name__ == "__main__":
     test_instance = LiLimParser.parse(
-        "./pdp_100/pdp_100/lc101.txt")
+        "./pdp_100/pdp_100/lc102.txt")
 
     test_alns = ALNS(test_instance)
     # 生成初始解

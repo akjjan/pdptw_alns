@@ -7,9 +7,12 @@ import random
 
 
 class DestroyOperator:
+    num_requests_to_remove_: int = 3  # 一次破坏操作移除的请求数量
+    y_: float = 3.0  # 控制随机移除的参数，y越大就越接近贪心
 
     @staticmethod
-    def remove(solution: Solution, instance: ProblemInstance, request_id: int) -> Solution:
+    def remove(solution: Solution, request_id: int) -> Solution:
+        instance = solution.instance_
         pickup_id, delivery_id = instance.requests_[request_id]
         # 取货，送货任务
         new_solution = copy.deepcopy(solution)
@@ -30,24 +33,33 @@ class DestroyOperator:
         return new_solution
         # 输入一个解，返回移除request后的解
 
-    @staticmethod
-    def random_worst_removal(solution: Solution, instance: ProblemInstance, num_requests_to_remove: int) -> Solution:
+    def random_worst_remove(self, solution: Solution) -> Solution:
+        num_requests_to_remove = self.num_requests_to_remove_
         new_solution = copy.deepcopy(solution)
         sorted_assigned_requests = sorted(
             new_solution.assigned_requests_,
             key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id), reverse=True)
 
-        y = 3.0  # 控制随机移除的参数，y越大就越接近贪心
+        y = self.y_
 
         to_remove_idx = set(
             [int((random.random() ** y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
 
         for idx in to_remove_idx:
             new_solution = DestroyOperator.remove(
-                new_solution, instance, sorted_assigned_requests[idx])
+                new_solution, sorted_assigned_requests[idx])
 
         return new_solution
         # 输入一个解，移除num_requests_to_remove个请求，返回新的解
+
+    def random_remove(self, solution: Solution) -> Solution:
+        num_requests_to_remove = self.num_requests_to_remove_
+        to_remove_idx = random.sample(
+            list(solution.assigned_requests_), k=num_requests_to_remove)
+        new_solution = copy.deepcopy(solution)
+        for idx in to_remove_idx:
+            new_solution = DestroyOperator.remove(new_solution, idx)
+        return new_solution
 
 
 class RepairOperator:
@@ -57,15 +69,16 @@ class RepairOperator:
         pass
 
     @staticmethod
-    def insert(solution: Solution, instance: ProblemInstance, request_id: int, route_idx: int, pickup_pos: int,
+    def insert(solution: Solution, request_id: int, route_idx: int, pickup_pos: int,
                delivery_pos: int) -> Solution:
+        instance = solution.instance_
         pickup_id, delivery_id = instance.requests_[request_id]
         # 取货和送货任务id
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的
         new_solution.routes_[route_idx] = solution.routes_[route_idx][:pickup_pos] + [pickup_id] \
-                                          + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
-                                          [delivery_id] + solution.routes_[route_idx][delivery_pos:]
+            + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
+            [delivery_id] + solution.routes_[route_idx][delivery_pos:]
         # 在指定路线的指定位置插入取货和送货任务
 
         new_solution.task_to_route_[pickup_id] = route_idx
@@ -81,7 +94,8 @@ class RepairOperator:
         return new_solution
 
     @staticmethod
-    def greedy_repair(solution: Solution, instance: ProblemInstance) -> Solution:
+    def greedy_repair(solution: Solution) -> Solution:
+
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的
 
@@ -105,25 +119,39 @@ class RepairOperator:
             if best_insert_route_idx[request_id] != -1:
                 # 如果有可行的插入位置，就插入这个请求
                 new_solution = RepairOperator.insert(
-                    new_solution, instance, request_id, best_insert_route_idx[request_id], best_pickup_pos[request_id],
+                    new_solution, request_id, best_insert_route_idx[
+                        request_id], best_pickup_pos[request_id],
                     best_delivery_pos[request_id])
 
         return new_solution
 
         # 输入一个解，按照贪心插入成本增加把request bank里的请求插入到solution里，返回新的解
 
-    def regret_repair(self, solution: Solution, instance: ProblemInstance) -> Solution:
-        pass
+    @staticmethod
+    def regret_repair(solution: Solution) -> Solution:
+        new_solution = copy.deepcopy(solution)
+        to_insert_requests = sorted(list(
+            new_solution.request_bank_), key=lambda req: new_solution.regret_value(req, k=3), reverse=True)
+        for request_id in to_insert_requests:
+            best_insert_route_idx, best_pickup_pos, best_delivery_pos, best_cost_increase = new_solution.greedy_insert_cost_increase(
+                request_id)
+            if best_insert_route_idx != -1:
+                new_solution = RepairOperator.insert(
+                    new_solution, request_id, best_insert_route_idx, best_pickup_pos, best_delivery_pos)
+
+        return new_solution
+        # 输入一个解，按照regret值把request bank里的请求插入到solution里，返回新的解
 
 
 class ALNS:
 
     def __init__(self, instance: ProblemInstance):
-        self._instance = instance
-        self._a1 = 1e4  # 车辆数量系数
-        self._a2 = self._a1 / instance.max_distance_  # 距离系数
-        self._a3 = self._a1 / instance.average_time_window_width_  # 时间窗违约系数
-        self._a4 = self._a1 / instance.half_capacity_  # 容量违约系数
+        self.instance_ = instance
+        self.a1_ = 1e3  # 车辆数量系数
+        self.a2_ = self.a1_ / instance.max_distance_  # 距离系数
+        self.a3_ = self.a1_ / instance.average_time_window_width_  # 时间窗违约系数
+        self.a4_ = self.a1_ / instance.half_capacity_  # 容量违约系数
+        self.a5_ = 1e3  # 未分配请求系数
         self._stats = {
             "iterations": 0,
             "infeasible_rejected": 0,
@@ -131,15 +159,17 @@ class ALNS:
             "worse_candidates": 0,
             "worse_accepted": 0,
         }
-        self.best_feasible_solution = Solution(instance)
+        self.best_feasible_solution_ = Solution(instance)
         self.best_feasible_cost = float('inf')
+        self.destroy_operators_ = DestroyOperator()
+        self.repair_operators_ = RepairOperator()
 
-    # 生50*成一个可行的初始解
+    # 生成一个可行的初始解
     def generate_initial_solution(self) -> Solution:
-        solution = Solution(self._instance)
+        solution = Solution(self.instance_)
 
         for request_id in list(solution.request_bank_):
-            pickup_id, delivery_id = self._instance.requests_[request_id]
+            pickup_id, delivery_id = self.instance_.requests_[request_id]
 
             to_insert_route_idx = min(
                 range(len(solution.routes_)), key=lambda idx: len(solution.routes_[idx]))
@@ -154,7 +184,7 @@ class ALNS:
             solution.task_to_route_[delivery_id] = to_insert_route_idx
             # 更新任务到路线的映射
 
-            if FeasibilityChecker.check_route(new_route, self._instance):
+            if FeasibilityChecker.check_route(new_route, self.instance_):
                 solution.routes_[to_insert_route_idx] = new_route
                 solution.request_bank_.discard(request_id)
                 solution.assigned_requests_.add(request_id)
@@ -163,31 +193,40 @@ class ALNS:
         solution.update_info()
 
         # 初始解可行则记录为最优可行解
-        if FeasibilityChecker.check_solution(solution, self._instance):
-            self.best_feasible_solution = copy.deepcopy(solution)
+        if FeasibilityChecker.check_solution(solution):
+            self.best_feasible_solution_ = copy.deepcopy(solution)
             self.best_feasible_cost = self.calculate_all_cost(solution)
 
         return solution
 
     # 车辆成本+距离成本+ 时间窗违约成本+容量违约成本
     def calculate_all_cost(self, solution: Solution) -> float:
-        return self._a1 * solution.vehicle_count_ + \
-            self._a2 * solution.solution_cost_ + \
-            self._a3 * CostEvaluator.calculate_time_window_violation(solution, self._instance) + \
-            self._a4 * \
+        return self.a1_ * solution.vehicle_count_ + \
+            self.a2_ * solution.solution_cost_ + \
+            self.a3_ * CostEvaluator.calculate_time_window_violation(solution) + \
+            self.a4_ * \
             CostEvaluator.calculate_capacity_violation(
-                solution, self._instance)
+                solution) + \
+            self.a5_ * len(solution.request_bank_)
 
     def iterate(self, solution: Solution):
-        new_solution = DestroyOperator.random_worst_removal(
-            solution, self._instance, num_requests_to_remove=1)
-        new_solution = RepairOperator.greedy_repair(
-            new_solution, self._instance)
+        destroy_operator = self.destroy_operators_
+        repair_operator = self.repair_operators_
+
+        a, b = random.random(), random.random()
+        if a < 0.5:
+            new_solution = destroy_operator.random_worst_remove(solution)
+        else:
+            new_solution = destroy_operator.random_remove(solution)
+        if b < 0.5:
+            new_solution = repair_operator.greedy_repair(new_solution)
+        else:
+            new_solution = repair_operator.regret_repair(new_solution)
 
         acceptance_bad_prob = 0.05
         self._stats["iterations"] += 1
 
-        if not FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution, self._instance):
+        if not FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution):
             self._stats["infeasible_rejected"] += 1
             return solution
         else:
@@ -195,9 +234,9 @@ class ALNS:
             old_cost = self.calculate_all_cost(solution)
 
             # 任何时候如果新解完全可行，就追踪最优可行解
-            if FeasibilityChecker.check_solution(new_solution, self._instance):
-                if self.best_feasible_solution is None or new_cost < self.best_feasible_cost:
-                    self.best_feasible_solution = copy.deepcopy(new_solution)
+            if FeasibilityChecker.check_solution(new_solution):
+                if self.best_feasible_solution_ is None or new_cost < self.best_feasible_cost:
+                    self.best_feasible_solution_ = copy.deepcopy(new_solution)
                     self.best_feasible_cost = new_cost
 
             if new_cost < old_cost:
@@ -235,6 +274,7 @@ class LiLimParser:
             # 读第一行
             instance.number_of_vehicles_ = k
             instance.vehicle_capacity_ = q
+
             instance.half_capacity_ = q / 2.0
 
             average_time_window_width = 0.0
@@ -256,7 +296,7 @@ class LiLimParser:
             instance.depot_x_ = instance.tasks_[0].x_
             instance.depot_y_ = instance.tasks_[0].y_
             instance.average_time_window_width_ = average_time_window_width / \
-                                                  len(instance.tasks_)
+                len(instance.tasks_)
 
         # 构建requests字典
         request_id = 1
