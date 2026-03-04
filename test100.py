@@ -15,7 +15,7 @@ def test(file_name):
     initial_solution = test_alns.generate_initial_solution()
     solution1 = copy.deepcopy(initial_solution)
     time1 = time.time()
-    ITER_NUM = 1000
+    ITER_NUM = 500
     for _ in range(ITER_NUM):
         solution1 = test_alns.iterate(solution1)
     time2 = time.time()
@@ -28,8 +28,8 @@ def test(file_name):
         f"worse_accepted={stats['worse_accepted']}")
     print(f"After {ITER_NUM} iterations:")
     print(
-        f"{file_name}解是否可行: {FeasibilityChecker.check_solution(test_alns.best_feasible_solution_)}")
-    print(test_alns.best_feasible_solution_)
+        f"{green_text(file_name)}解是否可行: {FeasibilityChecker.check_solution(test_alns.best_feasible_solution)}")
+    print(test_alns.best_feasible_solution)
     print(green_text('-----------------------------'))
 
 

@@ -58,7 +58,7 @@ class Solution:
         pickup_id, delivery_id = instance.requests_[request_id]
         route = self.routes_[route_idx]
 
-        maxn = 0.05 * self.instance_.max_distance_
+        maxn = 0.01 * self.instance_.max_distance_
         noise = random.uniform(-maxn, maxn)
 
         if pickup_pos == delivery_pos:

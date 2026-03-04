@@ -37,5 +37,5 @@ if __name__ == "__main__":
         f"worse_accepted={stats['worse_accepted']}")
     print(green_text(f"After {ITER_NUM} iterations:"))
     print(
-        f"解是否可行: {FeasibilityChecker.check_solution(test_alns.best_feasible_solution_)}")
-    print(test_alns.best_feasible_solution_)
+        f"解是否可行: {FeasibilityChecker.check_solution(test_alns.best_feasible_solution)}")
+    print(test_alns.best_feasible_solution)

@@ -1,20 +1,97 @@
 from solution_layer import Solution
 from problem_layer import ProblemInstance, Task
 from evaluator_layer import FeasibilityChecker, CostEvaluator
+from math import exp
 import numpy as np
 import copy
 import random
 
 
 class DestroyOperator:
-    num_requests_to_remove_: int = 3  # 一次破坏操作移除的请求数量
-    y_: float = 3.0  # 控制随机移除的参数，y越大就越接近贪心
+    def __init__(self):
+        self.num_requests_to_remove: int = 3  # 一次破坏操作移除的请求数量
+        self.remove_greedy_index: float = 3.0  # 控制移除随机性的参数，值越大，就越接近贪心
+
+    @staticmethod
+    def calculate_similarity(instance: ProblemInstance, req_id1: int, req_id2: int) -> float:
+        """
+        Args:
+            instance (ProblemInstance): 问题实例
+            req_id1 (int): 请求ID1
+            req_id2 (int): 请求ID2
+        Returns:
+            similarity (float): 请求1和请求2的相似度,数值越小,表示越相似
+        """
+        pickup1, delivery1 = instance.requests_[req_id1]
+        pickup2, delivery2 = instance.requests_[req_id2]
+
+        pickup_task1 = instance.tasks_[pickup1]
+        delivery_task1 = instance.tasks_[delivery1]
+        pickup_task2 = instance.tasks_[pickup2]
+        delivery_task2 = instance.tasks_[delivery2]
+
+        similarity = 0.0
+
+        similarity += instance.distance_matrix_[pickup1, pickup2]
+        similarity += instance.distance_matrix_[delivery1, delivery2]
+        similarity += abs(pickup_task1.ready_time_ - pickup_task2.ready_time_)
+        similarity += abs(delivery_task1.ready_time_ -
+                          delivery_task2.ready_time_)
+        similarity += abs(pickup_task1.due_time_ - pickup_task2.due_time_)
+        similarity += abs(delivery_task1.due_time_ - delivery_task2.due_time_)
+        similarity += abs(pickup_task1.demand_ - pickup_task2.demand_)
+
+        return similarity
+
+    def shaw_remove(self, solution: Solution) -> Solution:
+        """
+        移除一簇相似的请求
+        Args:
+            solution (Solution): 当前解
+        Returns:
+            new_solution (Solution): 经过Shaw移除操作后的新解
+        """
+        new_solution = copy.deepcopy(solution)
+        #  复制一份解来修改
+        r = random.choice(list(new_solution.assigned_requests_))
+        # 随机选择一个已分配的请求作为起点
+        to_remove_reqs = set([r])
+        # 待移除请求集合，初始包含起点请求
+
+        sorted_to_remove_reqs = sorted(
+            new_solution.assigned_requests_,
+            key=lambda req_id: DestroyOperator.calculate_similarity(new_solution.instance_, r, req_id))
+        # 按照与初始请求的相似度对已分配请求进行排序，越相似的请求越靠前
+
+        y = self.remove_greedy_index
+
+        to_remove_idx = [int((random.random() ** y) * len(sorted_to_remove_reqs))
+                         for _ in range(self.num_requests_to_remove - 1)]
+        # 选出与初始请求相似度较高的请求索引，数量为num_requests_to_remove-1
+
+        for idx in to_remove_idx:
+            to_remove_reqs.add(sorted_to_remove_reqs[idx])
+
+        for req_id in to_remove_reqs:
+            new_solution = DestroyOperator.remove(new_solution, req_id)
+
+        return new_solution
 
     @staticmethod
     def remove(solution: Solution, request_id: int) -> Solution:
+        """
+        输入一个解和一个请求id，返回移除这个请求后的新解
+
+        Args:
+            solution (Solution): 当前解
+            request_id (int): 要移除的请求ID
+        Returns:
+            solution: 移除请求后的新解
+        """
         instance = solution.instance_
         pickup_id, delivery_id = instance.requests_[request_id]
         # 取货，送货任务
+
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的解
         route = new_solution.routes_[new_solution.task_to_route_[pickup_id]]
@@ -33,14 +110,21 @@ class DestroyOperator:
         return new_solution
         # 输入一个解，返回移除request后的解
 
-    def random_worst_remove(self, solution: Solution) -> Solution:
-        num_requests_to_remove = self.num_requests_to_remove_
+    def worst_random_remove(self, solution: Solution) -> Solution:
+        """
+        移除那些可能带来最大成本降低的请求,带有一定随机性
+        Args:
+            solution (Solution): 当前解
+        Returns:
+            new_solution (Solution): 经过worst random移除操作后的新解
+        """
+        num_requests_to_remove = self.num_requests_to_remove
         new_solution = copy.deepcopy(solution)
         sorted_assigned_requests = sorted(
             new_solution.assigned_requests_,
             key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id), reverse=True)
 
-        y = self.y_
+        y = self.remove_greedy_index
 
         to_remove_idx = set(
             [int((random.random() ** y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
@@ -53,7 +137,14 @@ class DestroyOperator:
         # 输入一个解，移除num_requests_to_remove个请求，返回新的解
 
     def random_remove(self, solution: Solution) -> Solution:
-        num_requests_to_remove = self.num_requests_to_remove_
+        """
+        随机移除一些请求
+        Args:
+            solution (Solution): 当前解
+        Returns:
+            new_solution (Solution): 经过随机移除操作后的新解
+        """
+        num_requests_to_remove = self.num_requests_to_remove
         to_remove_idx = random.sample(
             list(solution.assigned_requests_), k=num_requests_to_remove)
         new_solution = copy.deepcopy(solution)
@@ -63,10 +154,33 @@ class DestroyOperator:
 
 
 class RepairOperator:
-    regret_k: int = 3
+    def __init__(self):
+        self.regret_k: int = 3  # 后悔值控制参数
 
-    def repair(self, solution: Solution) -> Solution:
-        pass
+    @staticmethod
+    def random_swap_fix(solution: Solution) -> Solution:
+        """
+        交换修复操作, 对一个解中的每条路线的相邻任务进行交换。如果交换后可行且能改进成本，就保留交换结果，否则恢复原状。返回修复后的新解。
+        Args:
+            solution (Solution): 当前解
+        Returns:
+            new_solution (Solution): 经过交换修复操作后的新解
+        """
+        dist = solution.instance_.distance_matrix_
+        new_solution = copy.deepcopy(solution)
+        routes = [r for r in new_solution.routes_ if len(r) > 2]
+        for route in routes:
+            for i in range(1, len(route) - 2):
+                j = i + 1
+                if dist[route[i-1], route[i]] + dist[route[i], route[j]] + dist[route[j], route[j+1]] > \
+                        dist[route[i-1], route[j]] + dist[route[j], route[i]] + dist[route[i], route[j+1]]:
+                    route[i], route[j] = route[j], route[i]
+                    if FeasibilityChecker.check_route(route, new_solution.instance_):
+                        break
+                    else:
+                        route[i], route[j] = route[j], route[i]
+        new_solution.update_info()
+        return new_solution
 
     @staticmethod
     def insert(solution: Solution, request_id: int, route_idx: int, pickup_pos: int,
@@ -139,6 +253,7 @@ class RepairOperator:
                 new_solution = RepairOperator.insert(
                     new_solution, request_id, best_insert_route_idx, best_pickup_pos, best_delivery_pos)
 
+        new_solution.update_info()
         return new_solution
         # 输入一个解，按照regret值把request bank里的请求插入到solution里，返回新的解
 
@@ -146,12 +261,25 @@ class RepairOperator:
 class ALNS:
 
     def __init__(self, instance: ProblemInstance):
-        self.instance_ = instance
-        self.a1_ = 1e3  # 车辆数量系数
-        self.a2_ = self.a1_ / instance.max_distance_  # 距离系数
-        self.a3_ = self.a1_ / instance.average_time_window_width_  # 时间窗违约系数
-        self.a4_ = self.a1_ / instance.half_capacity_  # 容量违约系数
-        self.a5_ = 1e3  # 未分配请求系数
+        self.eps = 1e-6  # 用于比较浮点数的容差
+        self.instance = instance  # 绑定问题实例
+        self.vehicle_coef = 1e3  # 车辆数量系数
+        self.distance_coef = self.vehicle_coef / instance.max_distance_  # 距离系数
+        self.time_coef = self.vehicle_coef / \
+            instance.average_time_window_width_  # 时间窗违约系数
+        self.capacity_coef = self.vehicle_coef / instance.half_capacity_  # 容量违约系数
+        self.unassigned_coef = 1e3  # 未分配请求违约系数
+
+        self.sigma1 = 8  # 全局最优改进奖励
+        self.sigma2 = 4  # 当前解改进奖励
+        self.sigma3 = 1  # 解被接受奖励
+
+        self.rho = 0.2  # 权重更新的学习率
+        self.alpha = 0.975  # 模拟退火的降温速率（加快降温）
+
+        self.segment_length = 100
+        self.segment_counter = 0
+
         self._stats = {
             "iterations": 0,
             "infeasible_rejected": 0,
@@ -159,17 +287,36 @@ class ALNS:
             "worse_candidates": 0,
             "worse_accepted": 0,
         }
-        self.best_feasible_solution_ = Solution(instance)
-        self.best_feasible_cost = float('inf')
-        self.destroy_operators_ = DestroyOperator()
-        self.repair_operators_ = RepairOperator()
+        self.best_feasible_solution = self.generate_initial_solution()  # 追踪最优可行解
+        self.best_feasible_cost = self.calculate_obj(
+            self.best_feasible_solution)  # 最优可行解的成本
+        self.temperature = 0.001 * self.best_feasible_cost   # 模拟退火初始温度
+        self.min_temperature = 0.001  # 模拟退火最低温度（改用固定绝对值，而非相对值）
+        self.destroy_operators = DestroyOperator()
+        self.repair_operators = RepairOperator()
 
-    # 生成一个可行的初始解
+        self.destroy_pool = [self.destroy_operators.shaw_remove,
+                             self.destroy_operators.worst_random_remove, self.destroy_operators.random_remove]
+        self.repair_pool = [self.repair_operators.greedy_repair,
+                            self.repair_operators.regret_repair]
+
+        self.destroy_weights = [1.0]*len(self.destroy_pool)
+        self.repair_weights = [1.0]*len(self.repair_pool)
+
+        self.destroy_scores = [0.0]*len(self.destroy_pool)
+        self.repair_scores = [0.0]*len(self.repair_pool)
+
+        self.destroy_uses = [0]*len(self.destroy_pool)
+        self.repair_uses = [0]*len(self.repair_pool)
+
     def generate_initial_solution(self) -> Solution:
-        solution = Solution(self.instance_)
+        """
+        生成一个初始解
+        """
+        solution = Solution(self.instance)
 
         for request_id in list(solution.request_bank_):
-            pickup_id, delivery_id = self.instance_.requests_[request_id]
+            pickup_id, delivery_id = self.instance.requests_[request_id]
 
             to_insert_route_idx = min(
                 range(len(solution.routes_)), key=lambda idx: len(solution.routes_[idx]))
@@ -184,7 +331,7 @@ class ALNS:
             solution.task_to_route_[delivery_id] = to_insert_route_idx
             # 更新任务到路线的映射
 
-            if FeasibilityChecker.check_route(new_route, self.instance_):
+            if FeasibilityChecker.check_route(new_route, self.instance):
                 solution.routes_[to_insert_route_idx] = new_route
                 solution.request_bank_.discard(request_id)
                 solution.assigned_requests_.add(request_id)
@@ -194,67 +341,114 @@ class ALNS:
 
         # 初始解可行则记录为最优可行解
         if FeasibilityChecker.check_solution(solution):
-            self.best_feasible_solution_ = copy.deepcopy(solution)
-            self.best_feasible_cost = self.calculate_all_cost(solution)
+            self.best_feasible_solution = copy.deepcopy(solution)
+            self.best_feasible_cost = self.calculate_obj(solution)
 
         return solution
 
-    # 车辆成本+距离成本+ 时间窗违约成本+容量违约成本
-    def calculate_all_cost(self, solution: Solution) -> float:
-        return self.a1_ * solution.vehicle_count_ + \
-            self.a2_ * solution.solution_cost_ + \
-            self.a3_ * CostEvaluator.calculate_time_window_violation(solution) + \
-            self.a4_ * \
+    def calculate_obj(self, solution: Solution) -> float:
+        """
+        计算带罚项的目标函数值。
+        车辆成本+距离成本+ 时间窗违约成本+容量违约成本+未分配请求违约成本
+        """
+        return self.vehicle_coef * solution.vehicle_count_ + \
+            self.distance_coef * solution.solution_cost_ + \
+            self.time_coef * CostEvaluator.calculate_time_window_violation(solution) + \
+            self.capacity_coef * \
             CostEvaluator.calculate_capacity_violation(
                 solution) + \
-            self.a5_ * len(solution.request_bank_)
+            self.unassigned_coef * len(solution.request_bank_)
+
+    def segment_update(self):
+        """
+        每个阶段更新算子权重
+        """
+        if self.segment_counter >= self.segment_length:
+            for i in range(len(self.destroy_pool)):
+                if self.destroy_uses[i] > 0:
+                    self.destroy_weights[i] = (
+                        1 - self.rho) * self.destroy_weights[i] + self.rho * self.destroy_scores[i] / self.destroy_uses[i]
+                self.destroy_scores[i] = 0.0
+                self.destroy_uses[i] = 0
+            for i in range(len(self.repair_pool)):
+                if self.repair_uses[i] > 0:
+                    self.repair_weights[i] = (
+                        1 - self.rho) * self.repair_weights[i] + self.rho * self.repair_scores[i] / self.repair_uses[i]
+                self.repair_scores[i] = 0.0
+                self.repair_uses[i] = 0
+            self.segment_counter = 0
 
     def iterate(self, solution: Solution):
-        destroy_operator = self.destroy_operators_
-        repair_operator = self.repair_operators_
+        destroy_idx, destroy_func = self.select_destroy_operator()
+        repair_idx, repair_func = self.select_repair_operator()
 
-        a, b = random.random(), random.random()
-        if a < 0.5:
-            new_solution = destroy_operator.random_worst_remove(solution)
-        else:
-            new_solution = destroy_operator.random_remove(solution)
-        if b < 0.5:
-            new_solution = repair_operator.greedy_repair(new_solution)
-        else:
-            new_solution = repair_operator.regret_repair(new_solution)
+        new_solution = destroy_func(solution)
+        new_solution = repair_func(new_solution)
 
-        acceptance_bad_prob = 0.05
+        self.destroy_uses[destroy_idx] += 1
+        self.repair_uses[repair_idx] += 1
+        self.segment_counter += 1
+        self.temperature = max(
+            self.temperature * self.alpha, self.min_temperature)  # 降温但不低于最低温度
+
         self._stats["iterations"] += 1
+
+        result_solution = solution  # 默认返回原解
 
         if not FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution):
             self._stats["infeasible_rejected"] += 1
-            return solution
         else:
-            new_cost = self.calculate_all_cost(new_solution)
-            old_cost = self.calculate_all_cost(solution)
+            new_solution = RepairOperator.random_swap_fix(new_solution)
+            new_cost = self.calculate_obj(new_solution)
+            old_cost = self.calculate_obj(solution)
 
             # 任何时候如果新解完全可行，就追踪最优可行解
             if FeasibilityChecker.check_solution(new_solution):
-                if self.best_feasible_solution_ is None or new_cost < self.best_feasible_cost:
-                    self.best_feasible_solution_ = copy.deepcopy(new_solution)
+                if new_cost < self.best_feasible_cost - self.eps:
+                    self.best_feasible_solution = copy.deepcopy(new_solution)
                     self.best_feasible_cost = new_cost
+                    self.destroy_scores[destroy_idx] += self.sigma1
+                    self.repair_scores[repair_idx] += self.sigma1
 
-            if new_cost < old_cost:
+            if new_cost < old_cost - self.eps:
+                # 如果新解明显改进
                 self._stats["better_accepted"] += 1
-                return new_solution
-            else:
+                self.destroy_scores[destroy_idx] += self.sigma2 + self.sigma3
+                self.repair_scores[repair_idx] += self.sigma2 + self.sigma3
+                result_solution = new_solution
+            elif new_cost > old_cost + self.eps:
+                # 新解明显更差，用温度接受准则
+                acceptance_bad_prob = exp(- (new_cost -
+                                          old_cost) / self.temperature)
                 self._stats["worse_candidates"] += 1
                 if random.random() < acceptance_bad_prob:
                     self._stats["worse_accepted"] += 1
-                    return new_solution
-                else:
-                    return solution
+                    self.destroy_scores[destroy_idx] += self.sigma3
+                    self.repair_scores[repair_idx] += self.sigma3
+                    result_solution = new_solution
+            else:
+                # 差异在eps范围内，视为相等，直接接受
+                result_solution = new_solution
+
+        # 统一在末尾更新权重（每 segment_length 次触发）
+        self.segment_update()
+        return result_solution
 
     def select_destroy_operator(self):
-        pass
+        """
+        根据权重随机选择一个破坏算子
+        """
+        probs = np.array(self.destroy_weights) / sum(self.destroy_weights)
+        idx = np.random.choice(len(self.destroy_pool), p=probs)
+        return idx, self.destroy_pool[idx]
 
     def select_repair_operator(self):
-        pass
+        """
+        根据权重随机选择一个修复算子
+        """
+        probs = np.array(self.repair_weights) / sum(self.repair_weights)
+        idx = np.random.choice(len(self.repair_pool), p=probs)
+        return idx, self.repair_pool[idx]
 
     def get_stats(self) -> dict:
         return dict(self._stats)
