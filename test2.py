@@ -8,4 +8,4 @@ if __name__ == "__main__":
     empty_solution = Solution(test_instance)
     initial_solution = test_alns.iterate(empty_solution)
 
-    print("Distance Matrix Shape:", test_instance.distance_matrix_.shape)
+    print("Distance Matrix Shape:", test_instance.distance_mat.shape)

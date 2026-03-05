@@ -8,9 +8,14 @@ import random
 
 
 class DestroyOperator:
-    def __init__(self):
-        self.num_requests_to_remove: int = 3  # 一次破坏操作移除的请求数量
-        self.remove_greedy_index: float = 3.0  # 控制移除随机性的参数，值越大，就越接近贪心
+    def __init__(self, num_requests_to_remove: int = 4, remove_greedy_index: float = 2.0):
+        """
+        Args:
+            num_requests_to_remove (int): 一次破坏操作移除的请求数量
+            remove_greedy_index (float): 控制移除随机性的参数，值越大，越接近贪心
+        """
+        self.num_requests_to_remove: int = num_requests_to_remove
+        self.remove_greedy_index: float = remove_greedy_index
 
     @staticmethod
     def calculate_similarity(instance: ProblemInstance, req_id1: int, req_id2: int) -> float:
@@ -22,24 +27,24 @@ class DestroyOperator:
         Returns:
             similarity (float): 请求1和请求2的相似度,数值越小,表示越相似
         """
-        pickup1, delivery1 = instance.requests_[req_id1]
-        pickup2, delivery2 = instance.requests_[req_id2]
+        pickup1, delivery1 = instance.requests[req_id1]
+        pickup2, delivery2 = instance.requests[req_id2]
 
-        pickup_task1 = instance.tasks_[pickup1]
-        delivery_task1 = instance.tasks_[delivery1]
-        pickup_task2 = instance.tasks_[pickup2]
-        delivery_task2 = instance.tasks_[delivery2]
+        pickup_task1 = instance.tasks[pickup1]
+        delivery_task1 = instance.tasks[delivery1]
+        pickup_task2 = instance.tasks[pickup2]
+        delivery_task2 = instance.tasks[delivery2]
 
         similarity = 0.0
 
-        similarity += instance.distance_matrix_[pickup1, pickup2]
-        similarity += instance.distance_matrix_[delivery1, delivery2]
-        similarity += abs(pickup_task1.ready_time_ - pickup_task2.ready_time_)
-        similarity += abs(delivery_task1.ready_time_ -
-                          delivery_task2.ready_time_)
-        similarity += abs(pickup_task1.due_time_ - pickup_task2.due_time_)
-        similarity += abs(delivery_task1.due_time_ - delivery_task2.due_time_)
-        similarity += abs(pickup_task1.demand_ - pickup_task2.demand_)
+        similarity += instance.distance_mat[pickup1, pickup2]
+        similarity += instance.distance_mat[delivery1, delivery2]
+        similarity += abs(pickup_task1.ready_time - pickup_task2.ready_time)
+        similarity += abs(delivery_task1.ready_time -
+                          delivery_task2.ready_time)
+        similarity += abs(pickup_task1.due_time - pickup_task2.due_time)
+        similarity += abs(delivery_task1.due_time - delivery_task2.due_time)
+        similarity += abs(pickup_task1.demand - pickup_task2.demand)
 
         return similarity
 
@@ -52,15 +57,14 @@ class DestroyOperator:
             new_solution (Solution): 经过Shaw移除操作后的新解
         """
         new_solution = copy.deepcopy(solution)
-        #  复制一份解来修改
-        r = random.choice(list(new_solution.assigned_requests_))
+        r = random.choice(list(new_solution.assigned_requests))
         # 随机选择一个已分配的请求作为起点
         to_remove_reqs = set([r])
         # 待移除请求集合，初始包含起点请求
 
         sorted_to_remove_reqs = sorted(
-            new_solution.assigned_requests_,
-            key=lambda req_id: DestroyOperator.calculate_similarity(new_solution.instance_, r, req_id))
+            new_solution.assigned_requests,
+            key=lambda req_id: DestroyOperator.calculate_similarity(new_solution.instance, r, req_id))
         # 按照与初始请求的相似度对已分配请求进行排序，越相似的请求越靠前
 
         y = self.remove_greedy_index
@@ -73,9 +77,28 @@ class DestroyOperator:
             to_remove_reqs.add(sorted_to_remove_reqs[idx])
 
         for req_id in to_remove_reqs:
-            new_solution = DestroyOperator.remove(new_solution, req_id)
+            DestroyOperator.remove_inplace(new_solution, req_id)
+
+        new_solution.update_info()
 
         return new_solution
+
+    @staticmethod
+    def remove_inplace(solution: Solution, request_id: int) -> None:
+        """
+        原地移除一个请求，避免在批量移除中反复拷贝。
+        """
+        instance = solution.instance
+        pickup_id, delivery_id = instance.requests[request_id]
+
+        route = solution.routes[solution.task_to_route[pickup_id]]
+        route.remove(pickup_id)
+        route.remove(delivery_id)
+
+        solution.task_to_route[pickup_id] = -1
+        solution.task_to_route[delivery_id] = -1
+        solution.request_bank.add(request_id)
+        solution.assigned_requests.remove(request_id)
 
     @staticmethod
     def remove(solution: Solution, request_id: int) -> Solution:
@@ -88,24 +111,9 @@ class DestroyOperator:
         Returns:
             solution: 移除请求后的新解
         """
-        instance = solution.instance_
-        pickup_id, delivery_id = instance.requests_[request_id]
-        # 取货，送货任务
-
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的解
-        route = new_solution.routes_[new_solution.task_to_route_[pickup_id]]
-        # 获得引用，直接修改这个route就行了
-        route.remove(pickup_id)
-        route.remove(delivery_id)
-
-        new_solution.task_to_route_[pickup_id] = -1
-        new_solution.task_to_route_[delivery_id] = -1
-        # 更新任务到路线的映射
-
-        new_solution.request_bank_.add(request_id)
-        new_solution.assigned_requests_.remove(request_id)
-        # 更新request bank和assigned requests
+        DestroyOperator.remove_inplace(new_solution, request_id)
         new_solution.update_info()
         return new_solution
         # 输入一个解，返回移除request后的解
@@ -121,7 +129,7 @@ class DestroyOperator:
         num_requests_to_remove = self.num_requests_to_remove
         new_solution = copy.deepcopy(solution)
         sorted_assigned_requests = sorted(
-            new_solution.assigned_requests_,
+            new_solution.assigned_requests,
             key=lambda req_id: new_solution.calculate_removal_cost_reduction(req_id), reverse=True)
 
         y = self.remove_greedy_index
@@ -130,8 +138,10 @@ class DestroyOperator:
             [int((random.random() ** y) * len(sorted_assigned_requests)) for _ in range(num_requests_to_remove)])
 
         for idx in to_remove_idx:
-            new_solution = DestroyOperator.remove(
+            DestroyOperator.remove_inplace(
                 new_solution, sorted_assigned_requests[idx])
+
+        new_solution.update_info()
 
         return new_solution
         # 输入一个解，移除num_requests_to_remove个请求，返回新的解
@@ -146,19 +156,25 @@ class DestroyOperator:
         """
         num_requests_to_remove = self.num_requests_to_remove
         to_remove_idx = random.sample(
-            list(solution.assigned_requests_), k=num_requests_to_remove)
+            list(solution.assigned_requests), k=num_requests_to_remove)
         new_solution = copy.deepcopy(solution)
         for idx in to_remove_idx:
-            new_solution = DestroyOperator.remove(new_solution, idx)
+            DestroyOperator.remove_inplace(new_solution, idx)
+
+        new_solution.update_info()
         return new_solution
 
 
 class RepairOperator:
-    def __init__(self):
-        self.regret_k: int = 3  # 后悔值控制参数
+    def __init__(self, regret_k: int = 4):
+        """
+        Args:
+            regret_k (int): 计算regret值时考虑的备选插入位置数量
+        """
+        self.regret_k: int = regret_k
 
     @staticmethod
-    def random_swap_fix(solution: Solution) -> Solution:
+    def swap_fix(solution: Solution) -> Solution:
         """
         交换修复操作, 对一个解中的每条路线的相邻任务进行交换。如果交换后可行且能改进成本，就保留交换结果，否则恢复原状。返回修复后的新解。
         Args:
@@ -166,16 +182,16 @@ class RepairOperator:
         Returns:
             new_solution (Solution): 经过交换修复操作后的新解
         """
-        dist = solution.instance_.distance_matrix_
+        dist = solution.instance.distance_mat
         new_solution = copy.deepcopy(solution)
-        routes = [r for r in new_solution.routes_ if len(r) > 2]
+        routes = [r for r in new_solution.routes if len(r) > 2]
         for route in routes:
             for i in range(1, len(route) - 2):
                 j = i + 1
                 if dist[route[i-1], route[i]] + dist[route[i], route[j]] + dist[route[j], route[j+1]] > \
                         dist[route[i-1], route[j]] + dist[route[j], route[i]] + dist[route[i], route[j+1]]:
                     route[i], route[j] = route[j], route[i]
-                    if FeasibilityChecker.check_route(route, new_solution.instance_):
+                    if FeasibilityChecker.check_route(route, new_solution.instance):
                         break
                     else:
                         route[i], route[j] = route[j], route[i]
@@ -183,25 +199,31 @@ class RepairOperator:
         return new_solution
 
     @staticmethod
+    def insert_inplace(solution: Solution, request_id: int, route_idx: int, pickup_pos: int,
+                       delivery_pos: int) -> None:
+        """
+        原地插入一个请求，避免在批量修复中反复拷贝。
+        """
+        instance = solution.instance
+        pickup_id, delivery_id = instance.requests[request_id]
+
+        route = solution.routes[route_idx]
+        solution.routes[route_idx] = route[:pickup_pos] + [pickup_id] \
+            + route[pickup_pos:delivery_pos] + \
+            [delivery_id] + route[delivery_pos:]
+
+        solution.task_to_route[pickup_id] = route_idx
+        solution.task_to_route[delivery_id] = route_idx
+        solution.assigned_requests.add(request_id)
+        solution.request_bank.remove(request_id)
+
+    @staticmethod
     def insert(solution: Solution, request_id: int, route_idx: int, pickup_pos: int,
                delivery_pos: int) -> Solution:
-        instance = solution.instance_
-        pickup_id, delivery_id = instance.requests_[request_id]
-        # 取货和送货任务id
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的
-        new_solution.routes_[route_idx] = solution.routes_[route_idx][:pickup_pos] + [pickup_id] \
-            + solution.routes_[route_idx][pickup_pos:delivery_pos] + \
-            [delivery_id] + solution.routes_[route_idx][delivery_pos:]
-        # 在指定路线的指定位置插入取货和送货任务
-
-        new_solution.task_to_route_[pickup_id] = route_idx
-        new_solution.task_to_route_[delivery_id] = route_idx
-        # 更新任务到路线的映射
-
-        new_solution.assigned_requests_.add(request_id)
-        # 更新request bank和assigned requests
-        new_solution.request_bank_.remove(request_id)
+        RepairOperator.insert_inplace(new_solution, request_id,
+                                      route_idx, pickup_pos, delivery_pos)
 
         new_solution.update_info()
         # 重新计算成本和车辆数
@@ -209,7 +231,9 @@ class RepairOperator:
 
     @staticmethod
     def greedy_repair(solution: Solution) -> Solution:
-
+        """
+        按照贪心插入成本增加把request bank里的请求插入到solution里，返回新的解
+        """
         new_solution = copy.deepcopy(solution)
         # 把solution复制一份，修改复制的
 
@@ -219,7 +243,7 @@ class RepairOperator:
         best_cost_increase: dict[int, float] = {}
 
         # 处理未分配的请求
-        for request_id in new_solution.request_bank_:
+        for request_id in new_solution.request_bank:
             best_insert_route_idx[request_id], best_pickup_pos[request_id], \
                 best_delivery_pos[request_id], best_cost_increase[request_id] \
                 = new_solution.greedy_insert_cost_increase(
@@ -227,30 +251,34 @@ class RepairOperator:
 
         # 把未分配请求按照贪心插入成本增加排序
         sorted_unassigned_requests = sorted(
-            new_solution.request_bank_, key=lambda req_id: best_cost_increase[req_id])
+            new_solution.request_bank, key=lambda req_id: best_cost_increase[req_id])
 
         for request_id in sorted_unassigned_requests:
             if best_insert_route_idx[request_id] != -1:
                 # 如果有可行的插入位置，就插入这个请求
-                new_solution = RepairOperator.insert(
+                RepairOperator.insert_inplace(
                     new_solution, request_id, best_insert_route_idx[
                         request_id], best_pickup_pos[request_id],
                     best_delivery_pos[request_id])
+
+        new_solution.update_info()
 
         return new_solution
 
         # 输入一个解，按照贪心插入成本增加把request bank里的请求插入到solution里，返回新的解
 
-    @staticmethod
-    def regret_repair(solution: Solution) -> Solution:
+    def regret_repair(self, solution: Solution) -> Solution:
+        """
+        按照regret值把request bank里的请求插入到solution里，返回新的解
+        """
         new_solution = copy.deepcopy(solution)
         to_insert_requests = sorted(list(
-            new_solution.request_bank_), key=lambda req: new_solution.regret_value(req, k=3), reverse=True)
+            new_solution.request_bank), key=lambda req: new_solution.regret_value(req, k=self.regret_k), reverse=True)
         for request_id in to_insert_requests:
             best_insert_route_idx, best_pickup_pos, best_delivery_pos, best_cost_increase = new_solution.greedy_insert_cost_increase(
                 request_id)
             if best_insert_route_idx != -1:
-                new_solution = RepairOperator.insert(
+                RepairOperator.insert_inplace(
                     new_solution, request_id, best_insert_route_idx, best_pickup_pos, best_delivery_pos)
 
         new_solution.update_info()
@@ -264,10 +292,10 @@ class ALNS:
         self.eps = 1e-6  # 用于比较浮点数的容差
         self.instance = instance  # 绑定问题实例
         self.vehicle_coef = 1e3  # 车辆数量系数
-        self.distance_coef = self.vehicle_coef / instance.max_distance_  # 距离系数
-        self.time_coef = self.vehicle_coef / \
-            instance.average_time_window_width_  # 时间窗违约系数
-        self.capacity_coef = self.vehicle_coef / instance.half_capacity_  # 容量违约系数
+        self.distance_coef = 0.4 * self.vehicle_coef / instance.max_distance  # 距离系数
+        self.time_coef = 0.4 * self.vehicle_coef / \
+            instance.average_time_window_width  # 时间窗违约系数
+        self.capacity_coef = 0.4 * self.vehicle_coef / instance.half_capacity  # 容量违约系数
         self.unassigned_coef = 1e3  # 未分配请求违约系数
 
         self.sigma1 = 8  # 全局最优改进奖励
@@ -275,7 +303,7 @@ class ALNS:
         self.sigma3 = 1  # 解被接受奖励
 
         self.rho = 0.2  # 权重更新的学习率
-        self.alpha = 0.975  # 模拟退火的降温速率（加快降温）
+        self.alpha = 0.98  # 模拟退火的降温速率（加快降温）
 
         self.segment_length = 100
         self.segment_counter = 0
@@ -290,7 +318,7 @@ class ALNS:
         self.best_feasible_solution = self.generate_initial_solution()  # 追踪最优可行解
         self.best_feasible_cost = self.calculate_obj(
             self.best_feasible_solution)  # 最优可行解的成本
-        self.temperature = 0.001 * self.best_feasible_cost   # 模拟退火初始温度
+        self.temperature = 0.01 * self.best_feasible_cost   # 模拟退火初始温度
         self.min_temperature = 0.001  # 模拟退火最低温度（改用固定绝对值，而非相对值）
         self.destroy_operators = DestroyOperator()
         self.repair_operators = RepairOperator()
@@ -315,26 +343,26 @@ class ALNS:
         """
         solution = Solution(self.instance)
 
-        for request_id in list(solution.request_bank_):
-            pickup_id, delivery_id = self.instance.requests_[request_id]
+        for request_id in list(solution.request_bank):
+            pickup_id, delivery_id = self.instance.requests[request_id]
 
             to_insert_route_idx = min(
-                range(len(solution.routes_)), key=lambda idx: len(solution.routes_[idx]))
+                range(len(solution.routes)), key=lambda idx: len(solution.routes[idx]))
             # 选择最短的路线插入请求
 
-            route = solution.routes_[to_insert_route_idx]
+            route = solution.routes[to_insert_route_idx]
             # 定位到要插入的路线
 
             new_route = route[:-1] + [pickup_id, delivery_id, 0]
             # 直接连续插入到最后
-            solution.task_to_route_[pickup_id] = to_insert_route_idx
-            solution.task_to_route_[delivery_id] = to_insert_route_idx
+            solution.task_to_route[pickup_id] = to_insert_route_idx
+            solution.task_to_route[delivery_id] = to_insert_route_idx
             # 更新任务到路线的映射
 
             if FeasibilityChecker.check_route(new_route, self.instance):
-                solution.routes_[to_insert_route_idx] = new_route
-                solution.request_bank_.discard(request_id)
-                solution.assigned_requests_.add(request_id)
+                solution.routes[to_insert_route_idx] = new_route
+                solution.request_bank.remove(request_id)
+                solution.assigned_requests.add(request_id)
                 # 如果插入后可行，更新路线、request bank和assigned requests
 
         solution.update_info()
@@ -351,13 +379,13 @@ class ALNS:
         计算带罚项的目标函数值。
         车辆成本+距离成本+ 时间窗违约成本+容量违约成本+未分配请求违约成本
         """
-        return self.vehicle_coef * solution.vehicle_count_ + \
-            self.distance_coef * solution.solution_cost_ + \
+        return self.vehicle_coef * solution.vehicle_count + \
+            self.distance_coef * solution.distance_cost + \
             self.time_coef * CostEvaluator.calculate_time_window_violation(solution) + \
             self.capacity_coef * \
             CostEvaluator.calculate_capacity_violation(
                 solution) + \
-            self.unassigned_coef * len(solution.request_bank_)
+            self.unassigned_coef * len(solution.request_bank)
 
     def segment_update(self):
         """
@@ -398,7 +426,7 @@ class ALNS:
         if not FeasibilityChecker.check_pickup_before_delivery_for_solution(new_solution):
             self._stats["infeasible_rejected"] += 1
         else:
-            new_solution = RepairOperator.random_swap_fix(new_solution)
+            new_solution = RepairOperator.swap_fix(new_solution)
             new_cost = self.calculate_obj(new_solution)
             old_cost = self.calculate_obj(solution)
 
@@ -458,7 +486,7 @@ class LiLimParser:
 
     @staticmethod
     def calculate_distance(task1: Task, task2: Task) -> float:
-        return ((task1.x_ - task2.x_) ** 2 + (task1.y_ - task2.y_) ** 2) ** 0.5
+        return ((task1.x - task2.x) ** 2 + (task1.y - task2.y) ** 2) ** 0.5
 
     @staticmethod
     def parse(filepath: str) -> ProblemInstance:
@@ -466,51 +494,55 @@ class LiLimParser:
         with open(filepath, 'r') as f:
             k, q, s = map(int, f.readline().strip().split())
             # 读第一行
-            instance.number_of_vehicles_ = k
-            instance.vehicle_capacity_ = q
+            instance.number_of_vehicles = k
+            instance.vehicle_capacity = q
 
-            instance.half_capacity_ = q / 2.0
+            instance.half_capacity = q / 2.0
 
             average_time_window_width = 0.0
+
+            line_cnt = 0
             for line in f:
                 task_id, x, y, demand, ready_time, due_time, service_time, pickup, delivery = map(
                     int, line.strip().split())
-                average_time_window_width += (due_time - ready_time)
-                instance.tasks_[task_id] = Task(
-                    x_=x,
-                    y_=y,
-                    demand_=demand,
-                    ready_time_=ready_time,
-                    due_time_=due_time,
-                    service_time_=service_time,
-                    pickup_=pickup,
-                    delivery_=delivery
+                if line_cnt > 0:
+                    average_time_window_width += (due_time - ready_time)
+                instance.tasks[task_id] = Task(
+                    x=x,
+                    y=y,
+                    demand=demand,
+                    ready_time=ready_time,
+                    due_time=due_time,
+                    service_time=service_time,
+                    pickup=pickup,
+                    delivery=delivery
                 )
+                line_cnt += 1
 
-            instance.depot_x_ = instance.tasks_[0].x_
-            instance.depot_y_ = instance.tasks_[0].y_
-            instance.average_time_window_width_ = average_time_window_width / \
-                len(instance.tasks_)
+            instance.depot_x = instance.tasks[0].x
+            instance.depot_y = instance.tasks[0].y
+            instance.average_time_window_width = average_time_window_width / \
+                (len(instance.tasks) - 1)
 
         # 构建requests字典
         request_id = 1
-        for id_, task in instance.tasks_.items():
-            if task.delivery_ > 0:
-                instance.requests_[request_id] = (id_, task.delivery_)
-                instance.pickup_to_request_[id_] = request_id
-                instance.delivery_to_request_[
-                    task.delivery_] = request_id
+        for id_, task in instance.tasks.items():
+            if task.delivery > 0:
+                instance.requests[request_id] = (id_, task.delivery)
+                instance.pickup_to_request[id_] = request_id
+                instance.delivery_to_request[
+                    task.delivery] = request_id
                 request_id += 1
 
-        instance.delivery_to_pickup_ = {
-            v: k for k, v in instance.requests_.values()}
+        instance.delivery_to_pickup = {
+            v: k for k, v in instance.requests.values()}
 
-        n = len(instance.tasks_)
-        instance.distance_matrix_ = np.zeros((n, n))
-        for i, task1 in instance.tasks_.items():
-            for j, task2 in instance.tasks_.items():
+        n = len(instance.tasks)
+        instance.distance_mat = np.zeros((n, n))
+        for i, task1 in instance.tasks.items():
+            for j, task2 in instance.tasks.items():
                 dist = LiLimParser.calculate_distance(task1, task2)
-                instance.distance_matrix_[i, j] = dist
-                instance.max_distance_ = max(instance.max_distance_, dist)
+                instance.distance_mat[i, j] = dist
+                instance.max_distance = max(instance.max_distance, dist)
 
         return instance

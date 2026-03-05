@@ -8,7 +8,7 @@ def green_text(text: str) -> str:
     return f"\033[92m{text}\033[0m"
 
 
-def test(file_name):
+def test(file_name, result_file):
     test_instance = LiLimParser.parse(f"{file_name}")
     test_alns = ALNS(test_instance)
     # 生成初始解
@@ -32,11 +32,18 @@ def test(file_name):
     print(test_alns.best_feasible_solution)
     print(green_text('-----------------------------'))
 
+    # 追加写入测试结果到test_results.txt
+    with open(result_file, "a") as f:
+        f.write(file_name + "  ")
+        f.write(str(test_alns.best_feasible_solution.vehicle_count) + "  ")
+        f.write(str(test_alns.best_feasible_solution.distance_cost) + "\n")
+
 
 if __name__ == "__main__":
     # 打开./pdp_100/pdp_100/目录下的所有txt文件，依次测试
     import os
     directory = "./pdp_100/pdp_100/"
+    result_file = "./test_results.txt"
     for filename in os.listdir(directory):
         if filename.endswith(".txt"):
-            test(os.path.join(directory, filename))
+            test(os.path.join(directory, filename), result_file)
